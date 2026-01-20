@@ -49,11 +49,12 @@ class AudioPlayer:
 				"sine", str(frequency1),
 				"vol", str(volume)
 			]
+			# Use run with timeout - it will kill the process if it hangs
 			result1 = subprocess.run(
 				cmd1,
 				stdout=subprocess.DEVNULL,
 				stderr=subprocess.DEVNULL,
-				timeout=5
+				timeout=max(5, duration + 2)  # Timeout slightly longer than duration
 			)
 			
 			if result1.returncode != 0:
@@ -71,12 +72,12 @@ class AudioPlayer:
 				cmd2,
 				stdout=subprocess.DEVNULL,
 				stderr=subprocess.DEVNULL,
-				timeout=5
+				timeout=max(5, duration + 2)
 			)
 			
 			return result2.returncode == 0
 			
-		except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+		except (FileNotFoundError, OSError) as e:
 			print(f"Error playing tones: {e}")
 			return False
 	
