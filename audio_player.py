@@ -1,6 +1,8 @@
 """Audio playback handler using SoX play command."""
 import subprocess
 import shutil
+import os
+import signal
 from typing import Optional
 
 
@@ -15,6 +17,30 @@ class AudioPlayer:
 				"SoX 'play' command not found. Please install SoX:\n"
 				"sudo apt install sox"
 			)
+		self._cleanup_stuck_processes()
+	
+	def _cleanup_stuck_processes(self):
+		"""Kill any stuck play processes from previous runs."""
+		try:
+			# Find play processes that might be stuck
+			result = subprocess.run(
+				["pgrep", "-f", "play -n synth"],
+				capture_output=True,
+				text=True,
+				timeout=2
+			)
+			if result.returncode == 0 and result.stdout.strip():
+				pids = result.stdout.strip().split('\n')
+				for pid in pids:
+					try:
+						pid_int = int(pid)
+						# Try SIGTERM first, then SIGKILL if needed
+						os.kill(pid_int, signal.SIGTERM)
+					except (ValueError, ProcessLookupError, PermissionError):
+						pass
+		except (FileNotFoundError, subprocess.TimeoutExpired):
+			# pgrep not available or timed out, skip cleanup
+			pass
 	
 	def _find_play_command(self) -> Optional[str]:
 		"""Find the play command path."""
@@ -49,12 +75,14 @@ class AudioPlayer:
 				"sine", str(frequency1),
 				"vol", str(volume)
 			]
-			# Use run with timeout - it will kill the process if it hangs
+			# Use run with timeout and start_new_session to create a new process group
+			# This allows us to kill the entire process tree if it hangs
 			result1 = subprocess.run(
 				cmd1,
 				stdout=subprocess.DEVNULL,
 				stderr=subprocess.DEVNULL,
-				timeout=max(5, duration + 2)  # Timeout slightly longer than duration
+				timeout=max(5, duration + 2),  # Timeout slightly longer than duration
+				start_new_session=True  # Create new process group
 			)
 			
 			if result1.returncode != 0:
@@ -72,11 +100,16 @@ class AudioPlayer:
 				cmd2,
 				stdout=subprocess.DEVNULL,
 				stderr=subprocess.DEVNULL,
-				timeout=max(5, duration + 2)
+				timeout=max(5, duration + 2),
+				start_new_session=True
 			)
 			
 			return result2.returncode == 0
 			
+		except subprocess.TimeoutExpired:
+			# Process timed out - subprocess.run should have killed it, but clean up anyway
+			self._cleanup_stuck_processes()
+			return False
 		except (FileNotFoundError, OSError) as e:
 			print(f"Error playing tones: {e}")
 			return False
