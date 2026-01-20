@@ -34,10 +34,36 @@ def main():
 		main_window = MainWindow(settings, tray_icon)
 		
 		# Connect signals
-		tray_icon.show_window.connect(main_window.show)
-		tray_icon.show_window.connect(main_window.raise_)
-		tray_icon.show_window.connect(main_window.activateWindow)
-		tray_icon.hide_window.connect(main_window.hide)
+		def show_and_raise_window():
+			"""Show and raise the main window."""
+			# Restore from minimized state first
+			if main_window.isMinimized():
+				main_window.showNormal()
+			
+			# Show the window (makes it visible if hidden)
+			main_window.setHidden(False)
+			main_window.show()
+			
+			# Ensure window is not minimized
+			main_window.setWindowState(Qt.WindowState.WindowNoState)
+			
+			# Bring window to front and activate it
+			main_window.raise_()
+			main_window.activateWindow()
+			
+			# Request focus
+			main_window.setFocus()
+			
+			# Update tray icon state
+			tray_icon.update_window_visibility(True)
+		
+		def hide_window():
+			"""Hide the main window."""
+			main_window.hide()
+			tray_icon.update_window_visibility(False)
+		
+		tray_icon.show_window.connect(show_and_raise_window)
+		tray_icon.hide_window.connect(hide_window)
 		tray_icon.toggle_playback.connect(main_window._toggle_playback)
 		tray_icon.quit_requested.connect(app.quit)
 		
@@ -53,6 +79,7 @@ def main():
 		
 		# Show main window
 		main_window.show()
+		tray_icon.update_window_visibility(True)
 		
 		# Run application
 		sys.exit(app.exec())

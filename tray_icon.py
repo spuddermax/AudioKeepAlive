@@ -17,6 +17,7 @@ class TrayIcon(QObject):
 		"""Initialize system tray icon."""
 		super().__init__(parent)
 		self.tray_icon = QSystemTrayIcon(parent)
+		self._window_visible = True
 		self._setup_icon()
 		self._setup_menu()
 		self.tray_icon.setContextMenu(self.menu)
@@ -62,8 +63,16 @@ class TrayIcon(QObject):
 	
 	def _on_tray_activated(self, reason):
 		"""Handle tray icon activation (e.g., double-click)."""
+		# Handle double-click to restore window
 		if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+			# Always restore/show the window on double-click
 			self.show_window.emit()
+		# Also handle trigger (single-click on some systems)
+		elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+			# On some systems, single-click is used instead of double-click
+			# Only toggle if window is hidden
+			if not self._window_visible:
+				self.show_window.emit()
 	
 	def show(self):
 		"""Show the tray icon."""
@@ -81,3 +90,11 @@ class TrayIcon(QObject):
 		else:
 			self.toggle_action.setText("Start")
 			self.set_tooltip("Audio Keep-Alive - Stopped")
+	
+	def update_window_visibility(self, visible: bool):
+		"""Update menu actions based on window visibility."""
+		self._window_visible = visible
+		if visible:
+			self.show_action.setText("Hide Window")
+		else:
+			self.show_action.setText("Show Window")

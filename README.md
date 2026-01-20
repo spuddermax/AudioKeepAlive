@@ -5,6 +5,7 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 ## Features
 
 - **Start/Stop Control**: Toggle audio playback on and off
+- **Auto-Start**: Automatically begins playing tones when the application launches
 - **Volume Control**: Adjust playback volume (0-100%)
 - **Interval Adjustment**: Change the time between tone plays (1-3600 seconds)
 - **Frequency Control**: Adjust both tone frequencies (20-20000 Hz)
@@ -36,21 +37,27 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 
 ## Usage
 
-1. **Run the application** (using the launcher script):
+1. **Run the application** (recommended - using the launcher script):
    ```bash
    ./run.sh
    ```
+   
+   The launcher script automatically uses the virtual environment if available.
 
-   Or manually activate the virtual environment and run:
+   **Alternative methods:**
+   
+   Manually activate the virtual environment and run:
    ```bash
    source venv/bin/activate
    python main.py
    ```
-
+   
    Or use the virtual environment Python directly:
    ```bash
    ./venv/bin/python main.py
    ```
+
+   **Note**: The application will automatically start playing tones when launched.
 
 2. **Controls**:
    - Click **Start/Stop** to toggle playback
@@ -103,6 +110,25 @@ Settings are automatically saved to `~/.config/audiokeepalive/settings.json` and
 **"Could not load the Qt platform plugin 'xcb'" error:**
 - Install the required X11 libraries: `sudo apt install libxcb-cursor0 libxcb-xinerama0 libxcb-xfixes0 libxcb-xkb1 libxkbcommon-x11-0`
 - These are Qt/X11 dependencies needed for PyQt6 to work with the X11 window system
+
+**"AttributeError: 'QApplication' object has no attribute 'isSystemTrayAvailable'" error:**
+- This was a bug in earlier versions. Make sure you're using the latest version of the code.
+- The method should be called on `QSystemTrayIcon`, not `QApplication`
+
+## Project Structure
+
+```
+AudioKeepAlive/
+├── main.py              # Application entry point
+├── main_window.py       # Main GUI window with all controls
+├── audio_player.py      # SoX audio playback handler
+├── tray_icon.py         # System tray icon and menu
+├── settings.py          # Settings persistence manager
+├── run.sh               # Launcher script (uses venv automatically)
+├── requirements.txt     # Python dependencies
+├── README.md            # This file
+└── venv/                # Virtual environment (created during setup)
+```
 
 ## License
 
