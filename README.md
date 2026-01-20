@@ -10,7 +10,7 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 - **Interval Adjustment**: Change the time between tone plays (1-3600 seconds)
 - **Frequency Control**: Adjust both tone frequencies (20-20000 Hz)
 - **Status Display**: Shows current status and countdown to next play
-- **System Tray Integration**: Minimize to tray and control from system tray menu
+- **System Tray Integration**: Hide window to tray (via minimize button or menu), click tray icon to restore, and control from system tray menu
 - **Settings Persistence**: Saves your preferences automatically
 
 ## Requirements
@@ -64,13 +64,16 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
    - Adjust **Volume** slider to change playback volume
    - Change **Interval** to modify time between plays
    - Adjust **Tone 1** and **Tone 2** frequencies
-   - Click **Minimize to Tray** to hide the window
+   - Click **Minimize to Tray** to hide the window to the system tray
+   - Click the **system minimize button** (title bar) to hide to tray
+   - Click the **close button (X)** to exit the application
    - Right-click the tray icon for quick access menu
 
 3. **System Tray**:
-   - The app runs in the system tray when minimized
+   - The app runs in the system tray when the window is hidden
+   - **Click the tray icon** to restore/show the window (single-click works)
    - Right-click the tray icon for options:
-     - Show/Hide Window
+     - Show Window / Hide Window (toggles based on current state)
      - Start/Stop playback
      - Quit
 
