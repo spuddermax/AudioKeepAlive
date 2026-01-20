@@ -132,4 +132,8 @@ AudioKeepAlive/
 
 ## License
 
-This project is provided as-is for personal use.
+This project is licensed under the MIT License.
+
+Copyright (c) 2026 spuddermax
+
+See the [LICENSE](LICENSE) file for details.
