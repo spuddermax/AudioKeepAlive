@@ -60,6 +60,12 @@ class Settings:
 			return bytes.fromhex(geom)
 		return None
 	
-	def set_window_geometry(self, geometry: bytes) -> None:
-		"""Save window geometry."""
-		self.set("window_geometry", geometry.hex())
+	def set_window_geometry(self, geometry) -> None:
+		"""Save window geometry.
+		
+		Args:
+			geometry: QByteArray or bytes object from saveGeometry()
+		"""
+		# Convert QByteArray to bytes (works for both QByteArray and bytes)
+		geom_bytes = bytes(geometry)
+		self.set("window_geometry", geom_bytes.hex())
