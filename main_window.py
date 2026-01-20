@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
 	QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 	QPushButton, QLabel, QSlider, QSpinBox, QMessageBox
 )
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QEvent
 from audio_player import AudioPlayer
 from settings import Settings
 
@@ -271,8 +271,30 @@ class MainWindow(QMainWindow):
 		"""Minimize window to system tray."""
 		if self.tray_icon:
 			self.hide()
+			self.tray_icon.update_window_visibility(False)
 		else:
 			self.showMinimized()
+	
+	def changeEvent(self, event):
+		"""Handle window state changes (e.g., minimize)."""
+		if event.type() == QEvent.Type.WindowStateChange:
+			# Check if window was minimized via system minimize button
+			if self.isMinimized():
+				# Hide to tray instead of minimizing normally
+				if self.tray_icon and self.tray_icon.tray_icon.isVisible():
+					# Use a timer to hide after the minimize event completes
+					QTimer.singleShot(0, self._hide_to_tray)
+		super().changeEvent(event)
+	
+	def _hide_to_tray(self):
+		"""Hide window to tray (called after minimize event)."""
+		if self.tray_icon and self.tray_icon.tray_icon.isVisible():
+			# Clear minimized state before hiding
+			self.setWindowState(Qt.WindowState.WindowNoState)
+			# Hide the window
+			self.hide()
+			# Update tray icon state immediately
+			self.tray_icon.update_window_visibility(False)
 	
 	def closeEvent(self, event):
 		"""Handle window close event."""
@@ -283,5 +305,6 @@ class MainWindow(QMainWindow):
 		if self.tray_icon and self.tray_icon.tray_icon.isVisible():
 			event.ignore()
 			self.hide()
+			self.tray_icon.update_window_visibility(False)
 		else:
 			event.accept()

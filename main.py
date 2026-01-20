@@ -32,26 +32,33 @@ def main():
 		settings = Settings()
 		tray_icon = TrayIcon()
 		main_window = MainWindow(settings, tray_icon)
+		# Set main window reference in tray icon for direct access
+		tray_icon.set_main_window(main_window)
 		
 		# Connect signals
 		def show_and_raise_window():
 			"""Show and raise the main window."""
-			# Restore from minimized state first
+			# Force the window to be visible and active
+			# First, ensure it's not hidden
+			if main_window.isHidden():
+				main_window.show()
+			
+			# Restore from minimized state
 			if main_window.isMinimized():
 				main_window.showNormal()
 			
-			# Show the window (makes it visible if hidden)
-			main_window.setHidden(False)
-			main_window.show()
-			
-			# Ensure window is not minimized
+			# Clear any minimized state flags
 			main_window.setWindowState(Qt.WindowState.WindowNoState)
 			
-			# Bring window to front and activate it
+			# Make sure window is visible
+			main_window.setVisible(True)
+			main_window.show()
+			
+			# Bring window to front - this is critical for restoring
 			main_window.raise_()
 			main_window.activateWindow()
 			
-			# Request focus
+			# Request focus to ensure it's active
 			main_window.setFocus()
 			
 			# Update tray icon state
