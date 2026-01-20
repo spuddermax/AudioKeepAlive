@@ -43,6 +43,12 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
    ```
    
    The launcher script automatically uses the virtual environment if available.
+   
+   **To run in the background:**
+   ```bash
+   ./run.sh &
+   ```
+   The script automatically handles backgrounding and will continue running even if you close the terminal.
 
    **Alternative methods:**
    
@@ -106,6 +112,8 @@ Settings are automatically saved to `~/.config/audiokeepalive/settings.json` and
 - Check that your audio system is working: `play -n synth 0.2 sine 200`
 - Verify volume levels in the app and system
 - Check that SoX is properly installed
+- If audio stops working, restart the application - it will automatically clean up any stuck audio processes on startup
+- Check for stuck `play` processes: `ps aux | grep "play -n synth" | grep -v grep` and kill them if found: `pkill -f "play -n synth"`
 
 **"externally-managed-environment" error when installing:**
 - This is expected on Linux Mint 22+. Use a virtual environment as shown in the Installation section above
