@@ -73,6 +73,10 @@ def main():
 		tray_icon.hide_window.connect(hide_window)
 		tray_icon.toggle_playback.connect(main_window._toggle_playback)
 		tray_icon.quit_requested.connect(app.quit)
+
+		# Ensure the persistent keep-awake stream is killed on exit so it does
+		# not linger as an orphaned 'play' process.
+		app.aboutToQuit.connect(main_window.audio_player.stop_keepalive)
 		
 		main_window.playback_started.connect(
 			lambda: tray_icon.update_playback_state(True)

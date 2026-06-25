@@ -20,9 +20,11 @@ class MainWindow(QMainWindow):
 		super().__init__()
 		self.settings = settings
 		self.tray_icon = tray_icon
-		self.audio_player = AudioPlayer()
+		self.audio_player = AudioPlayer(self)
+		self.audio_player.playback_error.connect(self._on_playback_error)
 		self.is_playing = False
 		self.countdown_seconds = 0
+		self._error_dialog_open = False
 		
 		# Timers
 		self.play_timer = QTimer(self)
@@ -176,8 +178,11 @@ class MainWindow(QMainWindow):
 		
 		self.is_playing = True
 		self._update_ui_state()
+		# Keep the audio device awake so it never suspends between tones,
+		# which avoids the device-resume race that wedges 'play' processes.
+		self.audio_player.start_keepalive()
 		self._play_tones()
-		
+
 		# Start timer for next play
 		interval_ms = self.interval_spinbox.value() * 1000
 		self.play_timer.start(interval_ms)
@@ -193,30 +198,46 @@ class MainWindow(QMainWindow):
 		
 		self.is_playing = False
 		self.play_timer.stop()
+		self.audio_player.stop_keepalive()
 		self.countdown_seconds = 0
 		self._update_ui_state()
-		
+
 		self.playback_stopped.emit()
 	
 	def _play_tones(self):
-		"""Play the two tones."""
+		"""Play the two tones (non-blocking; errors arrive via signal)."""
 		volume_percent = self.volume_slider.value()
 		volume_sox = self.audio_player.volume_percent_to_sox(volume_percent)
 		freq1 = self.freq1_spinbox.value()
 		freq2 = self.freq2_spinbox.value()
-		
-		success = self.audio_player.play_tones(
+
+		self.audio_player.play_tones(
 			frequency1=freq1,
 			frequency2=freq2,
 			volume=volume_sox
 		)
-		
-		if not success:
-			QMessageBox.warning(
-				self,
-				"Playback Error",
-				"Failed to play tones. Please check that SoX is installed and working."
+
+	def _on_playback_error(self, message: str):
+		"""Handle an asynchronous playback failure without stacking dialogs."""
+		# Reflect the failure in the status line every time it happens...
+		if self.is_playing:
+			self.status_label.setText("Status: Running (audio error)")
+			self.status_label.setStyleSheet(
+				"font-weight: bold; font-size: 12pt; color: #e67e22;"
 			)
+
+		# ...but only surface a single modal dialog at a time so repeated
+		# failures (e.g. every interval) cannot stack up endlessly.
+		if self._error_dialog_open:
+			return
+		self._error_dialog_open = True
+		QMessageBox.warning(
+			self,
+			"Playback Error",
+			f"{message}\n\nPlease check that SoX is installed and your audio "
+			"device is working."
+		)
+		self._error_dialog_open = False
 	
 	def _on_play_timer(self):
 		"""Called when play timer expires."""

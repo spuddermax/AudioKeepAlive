@@ -12,6 +12,7 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 - **Status Display**: Shows current status and countdown to next play
 - **System Tray Integration**: Hide window to tray (via minimize button or menu), click tray icon to restore, and control from system tray menu
 - **Settings Persistence**: Saves your preferences automatically
+- **Reliable Long-Running Playback**: Playback runs without blocking the UI, the audio device is kept awake to prevent suspend-related stalls, and any hung `play` process is automatically terminated and recovered from on the next interval — no restart required
 
 ## Requirements
 
@@ -112,8 +113,18 @@ Settings are automatically saved to `~/.config/audiokeepalive/settings.json` and
 - Check that your audio system is working: `play -n synth 0.2 sine 200`
 - Verify volume levels in the app and system
 - Check that SoX is properly installed
-- If audio stops working, restart the application - it will automatically clean up any stuck audio processes on startup
-- Check for stuck `play` processes: `ps aux | grep "play -n synth" | grep -v grep` and kill them if found: `pkill -f "play -n synth"`
+
+**Audio stops working after running for a while:**
+
+The app is designed to recover from this on its own, so a restart should rarely be needed:
+- While playback is active, a continuous, near-silent keep-awake stream runs to stop the audio device from suspending between tones (suspend/resume races were the main cause of `play` getting stuck).
+- Playback runs off the UI thread via `QProcess`, and any tone that hangs is automatically terminated (SIGTERM, escalating to SIGKILL) and retried on the next interval.
+- On startup the app also clears any stuck `play` processes left over from a previous run.
+
+If audio still stops:
+- Watch for the status changing to **"Running (audio error)"** and a one-time "Playback Error" dialog — this indicates a tone failed to play.
+- Check for stuck `play` processes: `ps aux | grep "play -n synth" | grep -v grep`. The persistent keep-awake process (`play -n synth 86400 sine 1 vol 0.0001`) is expected while playback is running; stop the app to clear it, or kill strays with `pkill -f "play -n synth"`.
+- As a last resort, restart the application — it will clean up any stuck audio processes on startup.
 
 **"externally-managed-environment" error when installing:**
 - This is expected on Linux Mint 22+. Use a virtual environment as shown in the Installation section above
