@@ -7,12 +7,12 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 - **Start/Stop Control**: Toggle audio playback on and off
 - **Auto-Start**: Automatically begins playing tones when the application launches
 - **Volume Control**: Adjust playback volume (0-100%)
-- **Interval Adjustment**: Change the time between tone plays (1-3600 seconds)
+- **Interval Adjustment**: Change the time between tone plays (1-600 seconds)
 - **Frequency Control**: Adjust both tone frequencies (20-20000 Hz)
 - **Status Display**: Shows current status and countdown to next play
 - **System Tray Integration**: Hide window to tray (via minimize button or menu), click tray icon to restore, and control from system tray menu
 - **Settings Persistence**: Saves your preferences automatically
-- **Reliable Long-Running Playback**: Playback runs without blocking the UI, the audio device is kept awake to prevent suspend-related stalls, and any hung `play` process is automatically terminated and recovered from on the next interval — no restart required
+- **Reliable Long-Running Playback**: Tones play through one continuous audio stream; if it exits or stalls it is restarted automatically — no app restart required
 
 ## Requirements
 
@@ -66,6 +66,14 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 
    **Note**: The application will automatically start playing tones when launched.
 
+   **Menu entry and start at login:**
+   ```bash
+   ./install.sh
+   ```
+   This adds **Audio Keep-Alive** to the Mint menu (under *Sound & Video*) and registers it to start at login, hidden in the system tray. It can be toggled later in *Startup Applications*. Run `./install.sh --uninstall` to remove both. Re-run `./install.sh` if you move the project folder.
+
+   Only one instance runs at a time: launching it again just brings up the existing window. Pass `--hidden` to start in the tray without showing the window.
+
 2. **Controls**:
    - Click **Start/Stop** to toggle playback
    - Adjust **Volume** slider to change playback volume
@@ -116,15 +124,15 @@ Settings are automatically saved to `~/.config/audiokeepalive/settings.json` and
 
 **Audio stops working after running for a while:**
 
-The app is designed to recover from this on its own, so a restart should rarely be needed:
-- While playback is active, a continuous, near-silent keep-awake stream runs to stop the audio device from suspending between tones (suspend/resume races were the main cause of `play` getting stuck).
-- Playback runs off the UI thread via `QProcess`, and any tone that hangs is automatically terminated (SIGTERM, escalating to SIGKILL) and retried on the next interval.
-- On startup the app also clears any stuck `play` processes left over from a previous run.
+The app is designed to recover from this on its own:
+- One interval (tone, tone, silence) is rendered to `~/.cache/audiokeepalive/cycle.wav` and looped forever by a single `play` process, so the audio connection is made once rather than for every tone.
+- If `play` exits, or stops reporting progress for 15 seconds, it is restarted with a growing delay of up to 30 seconds.
+- While a failure is active the status shows **"Running (audio error)"** and the tray icon changes to a warning. Both clear when audio resumes.
 
 If audio still stops:
-- Watch for the status changing to **"Running (audio error)"** and a one-time "Playback Error" dialog — this indicates a tone failed to play.
-- Check for stuck `play` processes: `ps aux | grep "play -n synth" | grep -v grep`. The persistent keep-awake process (`play -n synth 86400 sine 1 vol 0.0001`) is expected while playback is running; stop the app to clear it, or kill strays with `pkill -f "play -n synth"`.
-- As a last resort, restart the application — it will clean up any stuck audio processes on startup.
+- Check the log: `~/.local/state/audiokeepalive/audiokeepalive.log`. It records every stream start, failure and recovery, plus anything `play` reports.
+- Check the stream is running: `ps aux | grep "cycle.wav repeat" | grep -v grep`. Exactly one is expected during playback.
+- As a last resort, restart the application — it will clean up any orphaned stream on startup.
 
 **"externally-managed-environment" error when installing:**
 - This is expected on Linux Mint 22+. Use a virtual environment as shown in the Installation section above
@@ -147,6 +155,8 @@ AudioKeepAlive/
 ├── tray_icon.py         # System tray icon and menu
 ├── settings.py          # Settings persistence manager
 ├── run.sh               # Launcher script (uses venv automatically)
+├── install.sh           # Installs menu entry, login autostart and icon
+├── icons/               # Application / tray icon
 ├── requirements.txt     # Python dependencies
 ├── README.md            # This file
 └── venv/                # Virtual environment (created during setup)

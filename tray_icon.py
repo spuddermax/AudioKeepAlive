@@ -1,7 +1,20 @@
 """System tray icon and menu."""
+from pathlib import Path
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QObject, pyqtSignal, Qt
+
+ICON_PATH = Path(__file__).resolve().parent / "icons" / "audiokeepalive.svg"
+
+
+def app_icon() -> QIcon:
+	"""Return the application icon, falling back to a theme icon."""
+	icon = QIcon(str(ICON_PATH))
+	if icon.isNull() or icon.pixmap(64, 64).isNull():
+		icon = QIcon.fromTheme("audio-volume-high")
+	if icon.isNull():
+		icon = QIcon.fromTheme("application-x-executable")
+	return icon
 
 
 class TrayIcon(QObject):
@@ -18,7 +31,6 @@ class TrayIcon(QObject):
 		super().__init__(parent)
 		self.tray_icon = QSystemTrayIcon(parent)
 		self._window_visible = True
-		self._main_window = None  # Will be set by main application
 		self._setup_icon()
 		self._setup_menu()
 		# Set context menu - note: on some systems this can interfere with click detection
@@ -26,18 +38,14 @@ class TrayIcon(QObject):
 		# Connect activation signal - this handles both single and double clicks
 		self.tray_icon.activated.connect(self._on_tray_activated)
 	
-	def set_main_window(self, window):
-		"""Set reference to main window for direct access."""
-		self._main_window = window
-	
 	def _setup_icon(self):
-		"""Setup tray icon (using default Qt icon for now)."""
-		# Use a simple icon - in a real app you'd load a custom icon
-		icon = QIcon.fromTheme("audio-volume-high")
-		if icon.isNull():
-			# Fallback to a simple icon
-			icon = QIcon.fromTheme("application-x-executable")
-		self.tray_icon.setIcon(icon)
+		"""Setup tray icon, with a greyed-out variant for the stopped state."""
+		self._running_icon = app_icon()
+		self._stopped_icon = QIcon(
+			self._running_icon.pixmap(64, 64, QIcon.Mode.Disabled)
+		)
+		self._error_icon = QIcon.fromTheme("dialog-warning", self._running_icon)
+		self.tray_icon.setIcon(self._stopped_icon)
 		self.tray_icon.setToolTip("Audio Keep-Alive")
 	
 	def _setup_menu(self):
@@ -67,47 +75,13 @@ class TrayIcon(QObject):
 		"""Handle tray icon activation (e.g., double-click)."""
 		# Handle double-click to restore window
 		if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-			# Always restore/show the window on double-click
-			# Try direct method first if available, then emit signal
-			if self._main_window:
-				self._restore_window_direct()
-			else:
-				self.show_window.emit()
+			self.show_window.emit()
 		# Also handle trigger (single-click on some systems)
 		# On Cinnamon/Linux Mint, single-click may be used
 		# Note: If context menu is set, single-click might open menu instead
 		elif reason == QSystemTrayIcon.ActivationReason.Trigger:
-			# Restore window on single-click if it's hidden
-			# This is a fallback for systems that use single-click
 			if not self._window_visible:
-				if self._main_window:
-					self._restore_window_direct()
-				else:
-					self.show_window.emit()
-	
-	def _restore_window_direct(self):
-		"""Directly restore the main window (bypasses signals)."""
-		if not self._main_window:
-			return
-		
-		# Restore from minimized state
-		if self._main_window.isMinimized():
-			self._main_window.showNormal()
-		
-		# Show the window
-		self._main_window.setVisible(True)
-		self._main_window.show()
-		
-		# Clear minimized state
-		self._main_window.setWindowState(Qt.WindowState.WindowNoState)
-		
-		# Bring to front
-		self._main_window.raise_()
-		self._main_window.activateWindow()
-		self._main_window.setFocus()
-		
-		# Update visibility state
-		self.update_window_visibility(True)
+				self.show_window.emit()
 	
 	def show(self):
 		"""Show the tray icon."""
@@ -117,30 +91,27 @@ class TrayIcon(QObject):
 		"""Set tray icon tooltip."""
 		self.tray_icon.setToolTip(text)
 	
-	def update_playback_state(self, is_playing: bool):
-		"""Update menu actions based on playback state."""
+	def update_playback_state(self, is_playing: bool, error: str = None):
+		"""Update menu actions and icon based on playback state."""
 		if is_playing:
 			self.toggle_action.setText("Stop")
-			self.set_tooltip("Audio Keep-Alive - Running")
+			if error:
+				self.tray_icon.setIcon(self._error_icon)
+				self.set_tooltip(f"Audio Keep-Alive - {error} Retrying...")
+			else:
+				self.tray_icon.setIcon(self._running_icon)
+				self.set_tooltip("Audio Keep-Alive - Running")
 		else:
 			self.toggle_action.setText("Start")
+			self.tray_icon.setIcon(self._stopped_icon)
 			self.set_tooltip("Audio Keep-Alive - Stopped")
 	
 	def _toggle_window_visibility(self):
 		"""Toggle window visibility based on current state."""
-		# Check actual window state if we have a reference
-		if self._main_window:
-			# If window is hidden or minimized, show it
-			if self._main_window.isHidden() or self._main_window.isMinimized():
-				self.show_window.emit()
-			else:
-				self.hide_window.emit()
+		if self._window_visible:
+			self.hide_window.emit()
 		else:
-			# Fallback to tracked state
-			if self._window_visible:
-				self.hide_window.emit()
-			else:
-				self.show_window.emit()
+			self.show_window.emit()
 	
 	def update_window_visibility(self, visible: bool):
 		"""Update menu actions based on window visibility."""

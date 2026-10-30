@@ -1,19 +1,23 @@
 """Main application window."""
 from PyQt6.QtWidgets import (
 	QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-	QPushButton, QLabel, QSlider, QSpinBox, QMessageBox
+	QPushButton, QLabel, QSlider, QSpinBox
 )
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal, QEvent
+from PyQt6.QtCore import QTimer, Qt, QEvent
 from audio_player import AudioPlayer
 from settings import Settings
 
 
+# Longest allowed interval. The looped file grows with the interval, and a
+# soundbar's auto-off timer is far longer than the gap this leaves.
+MAX_INTERVAL_SECONDS = 600
+
+# Controls can fire many changes per second; wait for them to settle.
+APPLY_DELAY_MS = 400
+
+
 class MainWindow(QMainWindow):
 	"""Main application window with all controls."""
-	
-	# Signals
-	playback_started = pyqtSignal()
-	playback_stopped = pyqtSignal()
 	
 	def __init__(self, settings: Settings, tray_icon=None):
 		"""Initialize main window."""
@@ -22,13 +26,14 @@ class MainWindow(QMainWindow):
 		self.tray_icon = tray_icon
 		self.audio_player = AudioPlayer(self)
 		self.audio_player.playback_error.connect(self._on_playback_error)
+		self.audio_player.playback_recovered.connect(self._on_playback_recovered)
 		self.is_playing = False
-		self.countdown_seconds = 0
-		self._error_dialog_open = False
+		self.audio_error = None
 		
 		# Timers
-		self.play_timer = QTimer(self)
-		self.play_timer.timeout.connect(self._on_play_timer)
+		self.apply_timer = QTimer(self)
+		self.apply_timer.setSingleShot(True)
+		self.apply_timer.timeout.connect(self._apply_settings)
 		self.countdown_timer = QTimer(self)
 		self.countdown_timer.timeout.connect(self._update_countdown)
 		self.countdown_timer.start(1000)  # Update every second
@@ -99,10 +104,10 @@ class MainWindow(QMainWindow):
 		
 		self.interval_spinbox = QSpinBox()
 		self.interval_spinbox.setMinimum(1)
-		self.interval_spinbox.setMaximum(3600)
+		self.interval_spinbox.setMaximum(MAX_INTERVAL_SECONDS)
 		self.interval_spinbox.setValue(60)
 		self.interval_spinbox.setSuffix(" seconds")
-		self.interval_spinbox.valueChanged.connect(self._on_interval_changed)
+		self.interval_spinbox.valueChanged.connect(self._on_setting_changed)
 		interval_layout.addWidget(self.interval_spinbox)
 		layout.addLayout(interval_layout)
 		
@@ -116,7 +121,7 @@ class MainWindow(QMainWindow):
 		self.freq1_spinbox.setMaximum(20000)
 		self.freq1_spinbox.setValue(200)
 		self.freq1_spinbox.setSuffix(" Hz")
-		self.freq1_spinbox.valueChanged.connect(self._on_frequency_changed)
+		self.freq1_spinbox.valueChanged.connect(self._on_setting_changed)
 		freq1_layout.addWidget(self.freq1_spinbox)
 		layout.addLayout(freq1_layout)
 		
@@ -129,7 +134,7 @@ class MainWindow(QMainWindow):
 		self.freq2_spinbox.setMaximum(20000)
 		self.freq2_spinbox.setValue(300)
 		self.freq2_spinbox.setSuffix(" Hz")
-		self.freq2_spinbox.valueChanged.connect(self._on_frequency_changed)
+		self.freq2_spinbox.valueChanged.connect(self._on_setting_changed)
 		freq2_layout.addWidget(self.freq2_spinbox)
 		layout.addLayout(freq2_layout)
 		
@@ -158,11 +163,27 @@ class MainWindow(QMainWindow):
 	
 	def _save_settings(self):
 		"""Save current UI state to settings."""
-		self.settings.set("volume", self.volume_slider.value())
-		self.settings.set("interval", self.interval_spinbox.value())
-		self.settings.set("frequency1", self.freq1_spinbox.value())
-		self.settings.set("frequency2", self.freq2_spinbox.value())
-		self.settings.set_window_geometry(self.saveGeometry())
+		self.settings.update({
+			"volume": self.volume_slider.value(),
+			"interval": self.interval_spinbox.value(),
+			"frequency1": self.freq1_spinbox.value(),
+			"frequency2": self.freq2_spinbox.value(),
+			"window_geometry": bytes(self.saveGeometry()).hex(),
+		})
+	
+	def _configure_player(self):
+		"""Pass the current controls to the audio player."""
+		self.audio_player.configure(
+			self.freq1_spinbox.value(),
+			self.freq2_spinbox.value(),
+			self.volume_slider.value(),
+			self.interval_spinbox.value()
+		)
+	
+	def _apply_settings(self):
+		"""Save settings and apply them to the audio stream."""
+		self._save_settings()
+		self._configure_player()
 	
 	def _toggle_playback(self):
 		"""Toggle playback on/off."""
@@ -177,19 +198,10 @@ class MainWindow(QMainWindow):
 			return
 		
 		self.is_playing = True
+		self._configure_player()
+		self.audio_player.start()
 		self._update_ui_state()
-		# Keep the audio device awake so it never suspends between tones,
-		# which avoids the device-resume race that wedges 'play' processes.
-		self.audio_player.start_keepalive()
-		self._play_tones()
-
-		# Start timer for next play
-		interval_ms = self.interval_spinbox.value() * 1000
-		self.play_timer.start(interval_ms)
-		self.countdown_seconds = self.interval_spinbox.value()
 		self._update_countdown()
-		
-		self.playback_started.emit()
 	
 	def stop_playback(self):
 		"""Stop playing tones."""
@@ -197,66 +209,43 @@ class MainWindow(QMainWindow):
 			return
 		
 		self.is_playing = False
-		self.play_timer.stop()
-		self.audio_player.stop_keepalive()
-		self.countdown_seconds = 0
+		self.audio_player.stop()
+		self.audio_error = None
 		self._update_ui_state()
-
-		self.playback_stopped.emit()
+		self._update_countdown()
 	
-	def _play_tones(self):
-		"""Play the two tones (non-blocking; errors arrive via signal)."""
-		volume_percent = self.volume_slider.value()
-		volume_sox = self.audio_player.volume_percent_to_sox(volume_percent)
-		freq1 = self.freq1_spinbox.value()
-		freq2 = self.freq2_spinbox.value()
-
-		self.audio_player.play_tones(
-			frequency1=freq1,
-			frequency2=freq2,
-			volume=volume_sox
-		)
-
+	def shutdown(self):
+		"""Save settings and stop the stream as the application exits."""
+		self._save_settings()
+		self.audio_player.stop()
+	
 	def _on_playback_error(self, message: str):
-		"""Handle an asynchronous playback failure without stacking dialogs."""
-		# Reflect the failure in the status line every time it happens...
-		if self.is_playing:
-			self.status_label.setText("Status: Running (audio error)")
-			self.status_label.setStyleSheet(
-				"font-weight: bold; font-size: 12pt; color: #e67e22;"
-			)
-
-		# ...but only surface a single modal dialog at a time so repeated
-		# failures (e.g. every interval) cannot stack up endlessly.
-		if self._error_dialog_open:
-			return
-		self._error_dialog_open = True
-		QMessageBox.warning(
-			self,
-			"Playback Error",
-			f"{message}\n\nPlease check that SoX is installed and your audio "
-			"device is working."
-		)
-		self._error_dialog_open = False
+		"""Show a playback failure; the player keeps retrying on its own."""
+		self.audio_error = message
+		self._update_ui_state()
 	
-	def _on_play_timer(self):
-		"""Called when play timer expires."""
-		self._play_tones()
-		self.countdown_seconds = self.interval_spinbox.value()
+	def _on_playback_recovered(self):
+		"""Clear the failure shown once the stream is playing again."""
+		self.audio_error = None
+		self._update_ui_state()
 	
 	def _update_countdown(self):
 		"""Update countdown display."""
-		if self.is_playing and self.countdown_seconds > 0:
-			self.countdown_label.setText(f"Next play in: {self.countdown_seconds} seconds")
-			self.countdown_seconds -= 1
-		elif not self.is_playing:
+		seconds = self.audio_player.seconds_until_next_tone()
+		if seconds is None:
 			self.countdown_label.setText("Next play in: -- seconds")
+		else:
+			self.countdown_label.setText(f"Next play in: {seconds} seconds")
 	
 	def _update_ui_state(self):
 		"""Update UI elements based on playback state."""
 		if self.is_playing:
-			self.status_label.setText("Status: Running")
-			self.status_label.setStyleSheet("font-weight: bold; font-size: 12pt; color: #2ecc71;")
+			if self.audio_error:
+				self.status_label.setText("Status: Running (audio error)")
+				self.status_label.setStyleSheet("font-weight: bold; font-size: 12pt; color: #e67e22;")
+			else:
+				self.status_label.setText("Status: Running")
+				self.status_label.setStyleSheet("font-weight: bold; font-size: 12pt; color: #2ecc71;")
 			self.start_stop_button.setText("⏸ Stop")
 		else:
 			self.status_label.setText("Status: Stopped")
@@ -264,29 +253,29 @@ class MainWindow(QMainWindow):
 			self.start_stop_button.setText("▶ Start")
 		
 		if self.tray_icon:
-			self.tray_icon.update_playback_state(self.is_playing)
+			self.tray_icon.update_playback_state(self.is_playing, self.audio_error)
 	
 	def _on_volume_changed(self, value: int):
 		"""Handle volume slider change."""
 		self._update_volume_label(value)
-		self._save_settings()
+		self._on_setting_changed()
 	
 	def _update_volume_label(self, value: int):
 		"""Update volume label text."""
 		self.volume_label.setText(f"{value}%")
 	
-	def _on_interval_changed(self, value: int):
-		"""Handle interval change."""
-		if self.is_playing:
-			# Restart timer with new interval
-			interval_ms = value * 1000
-			self.play_timer.start(interval_ms)
-			self.countdown_seconds = value
-		self._save_settings()
+	def _on_setting_changed(self):
+		"""Apply a changed control once it has settled."""
+		self.apply_timer.start(APPLY_DELAY_MS)
 	
-	def _on_frequency_changed(self):
-		"""Handle frequency change."""
-		self._save_settings()
+	def show_and_raise(self):
+		"""Show the window, restoring it if needed, and bring it to the front."""
+		self.setWindowState(Qt.WindowState.WindowNoState)
+		self.show()
+		self.raise_()
+		self.activateWindow()
+		if self.tray_icon:
+			self.tray_icon.update_window_visibility(True)
 	
 	def _minimize_to_tray(self):
 		"""Minimize window to system tray."""
