@@ -1,6 +1,6 @@
 # Audio Keep-Alive Desktop App
 
-A Qt-based desktop application for Linux Mint that plays two tones every 60 seconds to keep your soundbar from auto-shutting down due to lack of audio playback.
+A Qt-based desktop application for Linux Mint that plays two tones at a set interval (every 60 seconds by default) to keep your soundbar from auto-shutting down due to lack of audio playback.
 
 ## Features
 
@@ -77,8 +77,9 @@ A Qt-based desktop application for Linux Mint that plays two tones every 60 seco
 2. **Controls**:
    - Click **Start/Stop** to toggle playback
    - Adjust **Volume** slider to change playback volume
-   - Change **Interval** to modify time between plays
+   - Change **Interval** to modify time between plays (keep it shorter than your soundbar's auto-off time)
    - Adjust **Tone 1** and **Tone 2** frequencies
+   - Changes to volume, interval or frequency apply as soon as the control settles: the stream restarts, the tones play straight away and the countdown resets
    - Click **Minimize to Tray** to hide the window to the system tray
    - Click the **system minimize button** (title bar) to hide to tray
    - Click the **close button (X)** to hide to tray (app continues running)
@@ -99,6 +100,10 @@ Settings are automatically saved to `~/.config/audiokeepalive/settings.json` and
 - Playback interval
 - Tone frequencies
 - Window position and size
+
+The app also uses these files:
+- `~/.cache/audiokeepalive/cycle.wav` - the rendered interval it loops, rewritten on each stream start (about 5.8 MB per minute of interval, so up to about 58 MB)
+- `~/.local/state/audiokeepalive/audiokeepalive.log` - the log, limited to about 1 MB plus one rotated copy
 
 ## Default Values
 
@@ -151,7 +156,7 @@ If audio still stops:
 AudioKeepAlive/
 ├── main.py              # Application entry point
 ├── main_window.py       # Main GUI window with all controls
-├── audio_player.py      # SoX audio playback handler
+├── audio_player.py      # Renders the tone cycle and runs the looping SoX stream
 ├── tray_icon.py         # System tray icon and menu
 ├── settings.py          # Settings persistence manager
 ├── run.sh               # Launcher script (uses venv automatically)
